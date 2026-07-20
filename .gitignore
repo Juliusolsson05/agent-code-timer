@@ -1,0 +1,13 @@
+node_modules
+*.log
+.DS_Store
+
+# NOTE: dist/ is deliberately NOT ignored.
+#
+# Agent Code's installer downloads the repository SOURCE tarball, not a release
+# asset, so the built entry named in agent-code.extension.json has to be present
+# in the repo itself. A dist/ that only exists in CI would mean every install
+# fails with "manifest points at a file that does not exist".
+#
+# If the host later grows support for release assets, ignore dist/ and attach the
+# build instead.

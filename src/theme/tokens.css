@@ -1,0 +1,351 @@
+/*
+ * The extension's own token layer.
+ *
+ * WHY the timer defines its own tokens instead of using Agent Code's --theme-*
+ * directly: black-and-white is the default look this timer is designed around —
+ * a focus tool should be visually quiet and should not change character every
+ * time the host's accent colour changes. Inheriting is opt-in (see inherit.ts),
+ * and when it is on these same variables are simply reassigned, so every rule
+ * below keeps working without a second stylesheet.
+ *
+ * All values are scoped under .agent-code-timer rather than :root because this
+ * stylesheet is injected into the HOST document. Anything at :root would leak
+ * into Agent Code's own UI.
+ */
+
+.agent-code-timer {
+  --tm-bg: #000000;
+  --tm-surface: #0d0d0d;
+  --tm-fg: #ffffff;
+  --tm-dim: #8a8a8a;
+  --tm-faint: #4a4a4a;
+  --tm-border: #262626;
+  --tm-accent: #ffffff;
+  --tm-accent-fg: #000000;
+
+  --tm-radius: 14px;
+  --tm-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --tm-font-digit: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: 34px 32px 30px;
+  background: var(--tm-bg);
+  color: var(--tm-fg);
+  font-family: var(--tm-font);
+  /* The host mounts extensions inside a dialog with its own background. Pulling
+     the extension's own background to the panel edges avoids a letterboxed look
+     where the host surface shows through around a smaller coloured box. */
+  margin: -1px;
+  border-radius: inherit;
+}
+
+.agent-code-timer *,
+.agent-code-timer *::before,
+.agent-code-timer *::after {
+  box-sizing: border-box;
+}
+
+.agent-code-timer button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+  /* Host stylesheets do not reach in here, but Chromium's UA sheet does. */
+  padding: 0;
+  outline: none;
+}
+
+.agent-code-timer input {
+  font-family: inherit;
+  outline: none;
+}
+
+/* ------------------------------------------------------------------ clock */
+
+.tm-clock {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  font-size: 15px;
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  color: var(--tm-dim);
+  transition: opacity 0.35s ease;
+  user-select: none;
+}
+
+.tm-clock[data-dimmed='true'] {
+  opacity: 0.15;
+}
+
+/* ------------------------------------------------------------------ digits */
+
+.tm-digits {
+  font-family: var(--tm-font-digit);
+  font-size: 72px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  user-select: none;
+  transition: color 0.5s ease;
+}
+
+.tm-digits[data-state='idle'] {
+  color: var(--tm-dim);
+}
+.tm-digits[data-state='finished'] {
+  color: var(--tm-faint);
+}
+
+/* ------------------------------------------------------------------ presets */
+
+.tm-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tm-dim);
+}
+
+.tm-presets {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 7px;
+}
+
+.tm-preset {
+  border-radius: 999px;
+  padding: 7px 15px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--tm-surface);
+  color: var(--tm-dim);
+  border: 1px solid var(--tm-border);
+  transition: all 0.18s ease;
+}
+
+.tm-preset:hover {
+  color: var(--tm-fg);
+}
+
+.tm-preset[data-selected='true'] {
+  background: var(--tm-accent);
+  color: var(--tm-accent-fg);
+  border-color: var(--tm-accent);
+}
+
+.tm-custom {
+  width: 108px;
+  border-radius: 10px;
+  border: 1px solid var(--tm-border);
+  background: var(--tm-surface);
+  color: var(--tm-fg);
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.tm-custom::placeholder {
+  color: var(--tm-faint);
+}
+
+/* ----------------------------------------------------------------- controls */
+
+.tm-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tm-primary {
+  border-radius: 999px;
+  padding: 11px 34px;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--tm-accent);
+  color: var(--tm-accent-fg);
+  transition: opacity 0.18s ease, transform 0.12s ease;
+}
+
+.tm-primary:hover {
+  opacity: 0.88;
+}
+.tm-primary:active {
+  transform: scale(0.97);
+}
+
+.tm-circle {
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border);
+  color: var(--tm-fg);
+  transition: background 0.18s ease, transform 0.12s ease;
+}
+
+.tm-circle:hover {
+  background: var(--tm-border);
+}
+.tm-circle:active {
+  transform: scale(0.95);
+}
+
+.tm-ghost {
+  font-size: 12px;
+  color: var(--tm-dim);
+  transition: color 0.18s ease;
+}
+.tm-ghost:hover {
+  color: var(--tm-fg);
+}
+
+/* ---------------------------------------------------------------- reminders */
+
+.tm-reminders {
+  width: 100%;
+  max-width: 330px;
+}
+
+.tm-reminders-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.tm-reminder {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 13px;
+  border-radius: var(--tm-radius);
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border);
+  margin-bottom: 6px;
+}
+
+.tm-reminder-label {
+  font-size: 13px;
+  color: var(--tm-fg);
+}
+.tm-reminder-sub {
+  font-size: 11px;
+  color: var(--tm-dim);
+}
+
+.tm-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 13px;
+  border-radius: var(--tm-radius);
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border);
+  margin-bottom: 8px;
+}
+
+.tm-add input {
+  border-radius: 9px;
+  border: 1px solid var(--tm-border);
+  background: var(--tm-bg);
+  color: var(--tm-fg);
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.tm-chip {
+  font-size: 11px;
+  color: var(--tm-dim);
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+
+/* -------------------------------------------------------------------- alert */
+
+/*
+ * Scoped to the extension's own root, NOT `position: fixed` over the viewport.
+ * The original app used `fixed inset-0` because it owned the whole page; here
+ * that would escape Agent Code's dialog and cover the app. Confining it means
+ * the alert is a modal within the extension's own surface, which is the correct
+ * containment for a hosted view.
+ */
+.tm-alert {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--tm-bg) 88%, transparent);
+  backdrop-filter: blur(6px);
+  border-radius: inherit;
+}
+
+.tm-alert-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 32px 36px;
+  border-radius: 22px;
+  background: var(--tm-surface);
+  border: 1px solid var(--tm-border);
+  max-width: 300px;
+  text-align: center;
+}
+
+.tm-alert-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: var(--tm-accent);
+  color: var(--tm-accent-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+}
+
+/* -------------------------------------------------------------------- theme */
+
+.tm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.tm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--tm-faint);
+  transition: color 0.18s ease;
+}
+.tm-toggle:hover {
+  color: var(--tm-dim);
+}
+
+.tm-toggle-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+.tm-toggle[data-on='true'] .tm-toggle-dot {
+  background: currentColor;
+}
