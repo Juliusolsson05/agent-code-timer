@@ -39,6 +39,25 @@ export default defineConfig({
     // point at our jsx-runtime alias rather than a bundled react.
     jsx: 'automatic',
   },
+  // REQUIRED, and the single most likely thing to break an extension build.
+  //
+  // Vite's LIBRARY mode does not define process.env.NODE_ENV — a normal app
+  // build replaces it, but a library is expected to leave it for the consuming
+  // bundler. There is no consuming bundler here: the output is loaded straight
+  // into a renderer with nodeIntegration:false, where `process` does not exist.
+  // Every React-ecosystem dependency guards its dev warnings with
+  // `process.env.NODE_ENV !== "production"`, so the first such guard to execute
+  // throws "process is not defined" and the extension fails to activate.
+  //
+  // Found the hard way: framer-motion ships eight of these, and the extension
+  // installed and imported cleanly before dying inside activate().
+  //
+  // Defining it rather than shimming a global `process` is deliberate — a fake
+  // process object would make libraries take Node code paths in a browser realm,
+  // which fails later and less obviously.
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+  },
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
