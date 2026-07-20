@@ -34,6 +34,8 @@ export class TimerEngine {
   private listeners = new Set<Listener>()
   private interval: ReturnType<typeof setInterval> | null = null
   private chime = new Chime()
+  /** Null means "rebuild on next read". See snapshot(). */
+  private cachedSnapshot: TimerState | null = null
 
   private phase: TimerState['phase'] = 'idle'
   private totalSeconds = 30 * 60
@@ -91,24 +93,47 @@ export class TimerEngine {
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener)
-    // Push current state immediately so a view that mounts mid-session renders
-    // the truth on its first frame rather than a default and then a correction.
-    listener(this.snapshot())
+    // Deliberately does NOT call the listener here.
+    //
+    // useSyncExternalStore reads the current value through getSnapshot itself,
+    // so an immediate push is redundant — and worse, it fires a state update
+    // during subscription, which React counts toward its update-depth limit.
+    // The first version did push, and combined with the allocating snapshot
+    // below it produced React error #185 (maximum update depth) the moment the
+    // view mounted, leaving a blank modal and an uncaught error.
     return () => {
       this.listeners.delete(listener)
     }
   }
 
+  /**
+   * The current state, as a STABLE reference.
+   *
+   * WHY the cache is not an optimisation: `useSyncExternalStore` compares the
+   * result of getSnapshot by identity on every render, and treats a new object
+   * as "the store changed". An allocating snapshot therefore reports a change on
+   * every render forever — React re-renders, calls getSnapshot, sees another new
+   * object, and gives up with error #185. Returning the same object until
+   * something actually changes is a CORRECTNESS requirement of the hook, not a
+   * performance tweak.
+   *
+   * Every mutation path goes through emit(), which invalidates. If a new mutator
+   * is added that does not, this cache silently goes stale and the UI freezes —
+   * so invalidation lives in emit() alone rather than being sprinkled per setter.
+   */
   snapshot(): TimerState {
-    return {
-      phase: this.phase,
-      totalSeconds: this.totalSeconds,
-      remainingSeconds: this.remainingSeconds(),
-      reminders: this.reminders,
-      activeReminderId: this.activeReminderId,
-      firedReminderKeys: [...this.firedReminderKeys],
-      inheritTheme: this.inheritTheme,
+    if (!this.cachedSnapshot) {
+      this.cachedSnapshot = {
+        phase: this.phase,
+        totalSeconds: this.totalSeconds,
+        remainingSeconds: this.remainingSeconds(),
+        reminders: this.reminders,
+        activeReminderId: this.activeReminderId,
+        firedReminderKeys: [...this.firedReminderKeys],
+        inheritTheme: this.inheritTheme,
+      }
     }
+    return this.cachedSnapshot
   }
 
   // ------------------------------------------------------------------ actions
@@ -309,6 +334,11 @@ export class TimerEngine {
   }
 
   private emit(): void {
+    // The ONE invalidation point. Every mutator routes through emit() or
+    // commit() (which calls emit()), so the cache cannot go stale without a new
+    // code path bypassing both — which is why this is here and not duplicated
+    // into each setter.
+    this.cachedSnapshot = null
     const state = this.snapshot()
     for (const listener of this.listeners) {
       try {

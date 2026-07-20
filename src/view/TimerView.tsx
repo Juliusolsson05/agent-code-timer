@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { Pause, Play, RotateCcw } from 'lucide-react'
-import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
 
 import type { TimerEngine } from '../engine/TimerEngine'
 import { applyThemeInheritance, watchHostTheme } from '../theme/inherit'
@@ -20,10 +20,13 @@ import { TimerDisplay } from './components/TimerDisplay'
  * followed by a correction.
  */
 export function TimerView({ engine }: { engine: TimerEngine }) {
-  const state = useSyncExternalStore(
-    callback => engine.subscribe(callback),
-    () => engine.snapshot(),
-  )
+  // Both arguments must be STABLE across renders. useSyncExternalStore
+  // resubscribes whenever the subscribe function's identity changes, so an
+  // inline arrow would tear down and rebuild the subscription on every single
+  // render — harmless-looking, and a steady stream of churn under a 250ms tick.
+  const subscribe = useCallback((onChange: () => void) => engine.subscribe(onChange), [engine])
+  const getSnapshot = useCallback(() => engine.snapshot(), [engine])
+  const state = useSyncExternalStore(subscribe, getSnapshot)
 
   const rootRef = useRef<HTMLDivElement | null>(null)
 
