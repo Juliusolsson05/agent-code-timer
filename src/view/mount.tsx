@@ -1,3 +1,4 @@
+import type { AgentCodeApiV1 } from 'agent-code-extension-api'
 import { createRoot } from 'react-dom/client'
 
 import type { TimerEngine } from '../engine/TimerEngine'
@@ -15,7 +16,10 @@ import { TimerView } from './TimerView'
  * a subscriber to the engine, and on cleanup unmounts. The engine keeps running:
  * closing the window mid-session is the normal case, not an edge case.
  */
-export function mountTimerView(engine: TimerEngine): (element: HTMLElement) => () => void {
+export function mountTimerView(
+  engine: TimerEngine,
+  api: AgentCodeApiV1,
+): (element: HTMLElement) => () => void {
   return (element: HTMLElement) => {
     // On mount rather than at module scope: activation happens at startup for
     // every session, and injecting a stylesheet for a view the user may never
@@ -23,7 +27,7 @@ export function mountTimerView(engine: TimerEngine): (element: HTMLElement) => (
     injectStyles()
 
     const root = createRoot(element)
-    root.render(<TimerView engine={engine} />)
+    root.render(<TimerView engine={engine} api={api} />)
 
     return () => {
       // Deferred because unmounting a React root synchronously from inside

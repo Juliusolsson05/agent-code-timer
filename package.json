@@ -1,7 +1,7 @@
 {
   "name": "agent-code-timer",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Focus timer extension for Agent Code",
   "scripts": {
@@ -16,7 +16,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "agent-code-extension-api": "github:Juliusolsson05/agent-code-extension-api",
+    "agent-code-extension-api": "github:Juliusolsson05/agent-code-extension-api#v0.2.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

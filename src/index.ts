@@ -42,7 +42,7 @@ export const { activate, deactivate } = defineExtension({
     })
 
     context.subscriptions.push(
-      context.registerView('timer.main', mountTimerView(engine)),
+      context.registerView('timer.main', mountTimerView(engine, api)),
 
       // `timer.open` has no handler — opening a declared view is the host's job.
       context.registerCommand('timer.start', () => engine?.start()),

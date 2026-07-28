@@ -1,6 +1,7 @@
+import type { AgentCodeApiV1 } from 'agent-code-extension-api'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Pause, Play, RotateCcw } from 'lucide-react'
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import type { TimerEngine } from '../engine/TimerEngine'
 import { applyThemeInheritance, watchHostTheme } from '../theme/inherit'
@@ -19,7 +20,7 @@ import { TimerDisplay } from './components/TimerDisplay'
  * session renders the correct time on the first frame instead of a default
  * followed by a correction.
  */
-export function TimerView({ engine }: { engine: TimerEngine }) {
+export function TimerView({ engine, api }: { engine: TimerEngine; api: AgentCodeApiV1 }) {
   // Both arguments must be STABLE across renders. useSyncExternalStore
   // resubscribes whenever the subscribe function's identity changes, so an
   // inline arrow would tear down and rebuild the subscription on every single
@@ -41,6 +42,36 @@ export function TimerView({ engine }: { engine: TimerEngine }) {
     return state.inheritTheme ? watchHostTheme(apply) : undefined
   }, [state.inheritTheme])
 
+  // Live count of agent sessions open in Agent Code, via the Tier-1 sessions.observe
+  // capability (granted at install through the manifest's permissions). observe() is
+  // a snapshot; subscribe() re-reads on any workspace change. If the capability is
+  // not granted, or the host is older than this API, observe() rejects and the
+  // indicator simply stays hidden — a focus timer must degrade, never break.
+  const [agentCount, setAgentCount] = useState<number | null>(null)
+  useEffect(() => {
+    let alive = true
+    const read = () => {
+      void api.sessions
+        .observe()
+        .then(sessions => {
+          if (!alive) return
+          setAgentCount(
+            sessions.filter(s => s.kind && s.kind !== 'terminal' && s.kind !== 'extension-view')
+              .length,
+          )
+        })
+        .catch(() => {
+          /* not granted / older host — leave the indicator hidden */
+        })
+    }
+    read()
+    const unsubscribe = api.sessions.subscribe(read)
+    return () => {
+      alive = false
+      unsubscribe()
+    }
+  }, [api])
+
   const activeReminder =
     state.activeReminderId != null
       ? (state.reminders.find(reminder => reminder.id === state.activeReminderId) ?? null)
@@ -51,6 +82,15 @@ export function TimerView({ engine }: { engine: TimerEngine }) {
   return (
     <div className="agent-code-timer" ref={rootRef}>
       <CurrentTime />
+
+      {agentCount !== null ? (
+        <div
+          style={{ marginTop: -16, fontSize: 11, letterSpacing: '0.03em', opacity: 0.55 }}
+          title="Agent sessions open in Agent Code — live via the sessions.observe capability"
+        >
+          {agentCount} {agentCount === 1 ? 'agent' : 'agents'} active
+        </div>
+      ) : null}
 
       <TimerDisplay remainingSeconds={state.remainingSeconds} phase={state.phase} />
 
