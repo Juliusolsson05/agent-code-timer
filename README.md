@@ -60,8 +60,10 @@ src/
     tokens.css          black & white defaults
     inherit.ts          --theme-* → --tm-* when toggled
     injectStyles.ts
-  host/                 resolves react to Agent Code's instance
 ```
+
+Built with the `agent-code-extension-api` SDK: types, `defineExtension`, and the
+Vite build preset. There is no `host/` shim directory anymore — see below.
 
 ### `dist/` is committed on purpose
 
@@ -70,15 +72,21 @@ asset, so the built entry named in `agent-code.extension.json` has to exist in
 the repo. A `dist/` that only existed in CI would make every install fail with
 "manifest points at a file that does not exist".
 
-### React comes from the host
+### The extension bundles its own React
 
-`vite.config.ts` aliases `react`, `react/jsx-runtime` and `react-dom/client` to
-shims in `src/host/` that read `globalThis.__agentCodeHost`. Bundling a second
-React would mean two reconcilers and "invalid hook call" on every hook.
+An extension runs in its **own sandboxed iframe** at its own origin — it cannot
+reach the host's `window`, DOM, or React. So it bundles React normally, like any
+web app. The old host-React shims (`src/host/`, `globalThis.__agentCodeHost`, the
+Vite aliases) are gone: there is no shared React instance to collide with across a
+frame boundary, so the "two reconcilers → invalid hook call" problem does not
+exist. `vite.config.ts` just uses `extensionViteConfig()` from the SDK plus
+`@vitejs/plugin-react`.
 
-Marking react `external` instead would leave a bare specifier the browser cannot
-resolve without a host-declared import map — aliasing resolves it at *this*
-build's time and needs nothing from the host beyond the global.
+The host talks to the frame over `postMessage`, brokered on the host side; the
+`api` object passed to `activate()` proxies the Tier-0 surface (storage / ui /
+theme) across that boundary. Theme tokens are pushed into the frame as CSS
+variables on every change, which is why `theme/inherit.ts` can still read
+`--theme-*` off `document.documentElement`.
 
 ## Development
 
