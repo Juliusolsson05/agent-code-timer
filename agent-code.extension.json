@@ -2,7 +2,7 @@
   "id": "timer",
   "name": "Timer",
   "description": "Focus timer with interval reminders. Keeps running when the window is closed.",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "apiVersion": 1,
   "entry": "dist/index.js",
   "activationEvents": [
