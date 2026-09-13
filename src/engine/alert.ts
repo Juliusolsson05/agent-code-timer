@@ -48,7 +48,7 @@ export class Chime {
     } catch {
       // Autoplay policy, no audio device, or a context limit. A silent reminder
       // is degraded but the visual alert still fires, so this must not throw
-      // into the engine's tick.
+      // into the view update that announced the reminder.
       this.context = null
     }
   }

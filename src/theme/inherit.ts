@@ -56,10 +56,10 @@ export function applyThemeInheritance(root: HTMLElement, inherit: boolean): void
 /**
  * Re-apply on host theme changes.
  *
- * The host has no theme-change event in API v1, so this observes the attribute
- * the host flips when the mode changes plus the inline style it writes accent
- * and font tokens into. A MutationObserver on one element is cheap and beats
- * polling; when the host gains a real theme event this can be replaced by it.
+ * The view API has no theme-change event, so this observes the attribute the host
+ * flips when the mode changes plus the inline style it writes accent and font
+ * tokens into. A MutationObserver on one element is cheap and beats polling;
+ * when the host gains a real theme event this can be replaced by it.
  */
 export function watchHostTheme(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange)

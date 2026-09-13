@@ -1,9 +1,10 @@
-import type { AgentCodeApiV1 } from 'agent-code-extension-api'
+import type { JsonValue, ViewContext } from 'agent-code-extension-api'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Pause, Play, RotateCcw } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { TimerEngine } from '../engine/TimerEngine'
+import { Chime } from '../engine/alert'
+import type { TimerState } from '../engine/types'
 import { applyThemeInheritance, watchHostTheme } from '../theme/inherit'
 import { CurrentTime } from './components/CurrentTime'
 import { DurationPicker } from './components/DurationPicker'
@@ -12,22 +13,49 @@ import { ReminderManager } from './components/ReminderManager'
 import { TimerDisplay } from './components/TimerDisplay'
 
 /**
- * The view. Owns no timer state — it is a window onto the engine.
+ * The view. Owns no timer state — it is a window onto the managed runtime.
  *
- * useSyncExternalStore rather than useState+useEffect: the engine is the source
- * of truth and can change between render and effect (a tick lands every 250ms),
- * and this is the hook designed for exactly that. It also means mounting mid-
- * session renders the correct time on the first frame instead of a default
- * followed by a correction.
+ * API v1 could pass the engine object directly because activation and the view
+ * happened in one document. API v2 deliberately forbids that shared closure:
+ * state crosses as bounded JSON and user actions return through named requests.
+ * The initial attached snapshot keeps a mid-session reopen correct on frame one.
  */
-export function TimerView({ engine, api }: { engine: TimerEngine; api: AgentCodeApiV1 }) {
-  // Both arguments must be STABLE across renders. useSyncExternalStore
-  // resubscribes whenever the subscribe function's identity changes, so an
-  // inline arrow would tear down and rebuild the subscription on every single
-  // render — harmless-looking, and a steady stream of churn under a 250ms tick.
-  const subscribe = useCallback((onChange: () => void) => engine.subscribe(onChange), [engine])
-  const getSnapshot = useCallback(() => engine.snapshot(), [engine])
-  const state = useSyncExternalStore(subscribe, getSnapshot)
+const EMPTY_STATE: TimerState = {
+  phase: 'idle', totalSeconds: 30 * 60, remainingSeconds: 30 * 60,
+  reminders: [], activeReminderId: null, firedReminderKeys: [], inheritTheme: false,
+}
+
+export function TimerView({ context }: { context: ViewContext<TimerState> }) {
+  const { api } = context
+  const [state, setState] = useState(() => context.runtime.state() ?? EMPTY_STATE)
+  useEffect(() => context.runtime.subscribe(setState), [context])
+
+  const send = useCallback((action: JsonValue) => {
+    void context.runtime.request<TimerState>('action', action).catch(error => {
+      void api.ui.showToast(error instanceof Error ? error.message : String(error))
+    })
+  }, [api.ui, context.runtime])
+
+  useEffect(() => {
+    // Settings can change while the runtime is already alive. There is no
+    // storage-change event yet, so opening a view is the reconciliation point.
+    send({ type: 'syncSettings' })
+  }, [send])
+
+  const chime = useRef<Chime | null>(null)
+  const previousPhase = useRef<TimerState['phase'] | null>(null)
+  useEffect(() => {
+    chime.current ??= new Chime()
+    const enteredReminder = state.phase === 'reminding'
+      && previousPhase.current !== 'reminding'
+    const finishedWhileOpen = state.phase === 'finished'
+      && previousPhase.current != null
+      && previousPhase.current !== 'finished'
+    if (enteredReminder || finishedWhileOpen) chime.current.play()
+    else if (state.phase !== 'reminding') chime.current.stop()
+    previousPhase.current = state.phase
+  }, [state.phase])
+  useEffect(() => () => chime.current?.stop(), [])
 
   const rootRef = useRef<HTMLDivElement | null>(null)
 
@@ -104,13 +132,15 @@ export function TimerView({ engine, api }: { engine: TimerEngine; api: AgentCode
           >
             <DurationPicker
               totalSeconds={state.totalSeconds}
-              onSelect={minutes => engine.setDuration(minutes)}
-              onStart={() => engine.start()}
+              onSelect={minutes => send({ type: 'setDuration', minutes })}
+              onStart={() => send({ type: 'start' })}
             />
             <ReminderManager
               reminders={state.reminders}
-              onAdd={(label, minutes) => engine.addReminder(label, minutes)}
-              onRemove={id => engine.removeReminder(id)}
+              onAdd={(label, intervalMinutes) => send({
+                type: 'addReminder', label, intervalMinutes,
+              })}
+              onRemove={id => send({ type: 'removeReminder', id })}
             />
           </motion.div>
         ) : (
@@ -126,7 +156,7 @@ export function TimerView({ engine, api }: { engine: TimerEngine; api: AgentCode
                 <button
                   type="button"
                   className="tm-circle"
-                  onClick={() => engine.pause()}
+                  onClick={() => send({ type: 'pause' })}
                   title="Pause"
                 >
                   <Pause size={17} />
@@ -136,13 +166,13 @@ export function TimerView({ engine, api }: { engine: TimerEngine; api: AgentCode
                 <button
                   type="button"
                   className="tm-circle"
-                  onClick={() => engine.resume()}
+                  onClick={() => send({ type: 'resume' })}
                   title="Resume"
                 >
                   <Play size={17} style={{ marginLeft: 2 }} />
                 </button>
               ) : null}
-              <button type="button" className="tm-circle" onClick={() => engine.reset()} title="Reset">
+              <button type="button" className="tm-circle" onClick={() => send({ type: 'reset' })} title="Reset">
                 <RotateCcw size={17} />
               </button>
             </div>
@@ -175,7 +205,7 @@ export function TimerView({ engine, api }: { engine: TimerEngine; api: AgentCode
           type="button"
           className="tm-toggle"
           data-on={state.inheritTheme}
-          onClick={() => engine.setInheritTheme(!state.inheritTheme)}
+          onClick={() => send({ type: 'setInheritTheme', value: !state.inheritTheme })}
           title={
             state.inheritTheme
               ? 'Using Agent Code theme — click for black & white'
@@ -189,7 +219,7 @@ export function TimerView({ engine, api }: { engine: TimerEngine; api: AgentCode
 
       <AnimatePresence>
         {activeReminder ? (
-          <ReminderAlert reminder={activeReminder} onDismiss={() => engine.dismissReminder()} />
+          <ReminderAlert reminder={activeReminder} onDismiss={() => send({ type: 'dismissReminder' })} />
         ) : null}
       </AnimatePresence>
     </div>

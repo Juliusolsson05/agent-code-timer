@@ -1,4 +1,3 @@
-import { Chime } from './alert'
 import type { PersistedTimer, Reminder, TimerState } from './types'
 
 export type EngineHost = {
@@ -19,8 +18,8 @@ const TICK_MS = 250
  * extension: a focus timer whose lifetime is tied to a visible window is not a
  * focus timer. You start a 45-minute session and then close the window to go and
  * work — that is the entire use case. So the engine owns all state and all
- * timing, `activate()` constructs it once, and the view is a subscriber that can
- * come and go without the session noticing.
+ * timing, the API v2 runtime constructs it once, and views subscribe through
+ * published state that can come and go without the session noticing.
  *
  * WHY every derivation is from a wall-clock deadline rather than a decrementing
  * counter: a per-tick subtraction accumulates however long each tick was
@@ -33,7 +32,6 @@ const TICK_MS = 250
 export class TimerEngine {
   private listeners = new Set<Listener>()
   private interval: ReturnType<typeof setInterval> | null = null
-  private chime = new Chime()
   /** Null means "rebuild on next read". See snapshot(). */
   private cachedSnapshot: TimerState | null = null
 
@@ -54,7 +52,8 @@ export class TimerEngine {
   // ---------------------------------------------------------------- lifecycle
 
   restore(data: PersistedTimer | undefined): void {
-    if (!data || data.version !== 1) return
+    if (!data || (data.version !== 1 && data.version !== 2)) return
+    let completedWhileAway = false
 
     this.totalSeconds = data.totalSeconds
     this.reminders = data.reminders ?? []
@@ -72,20 +71,41 @@ export class TimerEngine {
       } else {
         this.phase = 'finished'
         this.deadlineAt = null
+        completedWhileAway = true
       }
     } else if (data.phase === 'paused' && data.pausedElapsedSeconds != null) {
       this.pausedElapsed = data.pausedElapsedSeconds
       this.phase = 'paused'
+    } else if (
+      data.version === 2
+      && data.phase === 'reminding'
+      && data.pausedElapsedSeconds != null
+      && data.activeReminderId != null
+      && this.reminders.some(reminder => reminder.id === data.activeReminderId)
+    ) {
+      // A reminder is a paused timer with an acknowledgement gate. Restoring it
+      // as ordinary paused state would hide the reason the timer stopped and let
+      // the user accidentally resume without seeing the reminder.
+      this.pausedElapsed = data.pausedElapsedSeconds
+      this.activeReminderId = data.activeReminderId
+      this.phase = 'reminding'
     } else if (data.phase === 'finished') {
       this.phase = 'finished'
     }
 
-    this.emit()
+    if (completedWhileAway) {
+      // Record the recovered terminal state before notifying. Otherwise every
+      // later app start would rediscover the same stale running deadline and
+      // announce one completion repeatedly.
+      this.host.notify('Focus session complete')
+      this.commit()
+    } else {
+      this.emit()
+    }
   }
 
   dispose(): void {
     this.stopTicking()
-    this.chime.stop()
     this.listeners.clear()
   }
 
@@ -178,7 +198,6 @@ export class TimerEngine {
 
   reset(): void {
     this.stopTicking()
-    this.chime.stop()
     this.phase = 'idle'
     this.deadlineAt = null
     this.pausedElapsed = 0
@@ -209,7 +228,6 @@ export class TimerEngine {
 
   dismissReminder(): void {
     if (this.phase !== 'reminding') return
-    this.chime.stop()
     this.activeReminderId = null
     // Resume from where the reminder interrupted, not from the original
     // deadline — the time spent doing pushups should not count against the
@@ -263,7 +281,6 @@ export class TimerEngine {
       this.phase = 'finished'
       this.deadlineAt = null
       this.host.notify('Focus session complete')
-      this.chime.play()
       this.commit()
       return
     }
@@ -277,7 +294,6 @@ export class TimerEngine {
       this.stopTicking()
       this.activeReminderId = fired.id
       this.phase = 'reminding'
-      this.chime.play()
       // Always toast, even when a view is open: the view's own modal covers the
       // in-window case, and the host has no way to tell us whether it is
       // visible. A duplicate notification is better than a missed one.
@@ -286,7 +302,10 @@ export class TimerEngine {
       return
     }
 
-    this.emit()
+    // A 250ms check catches boundaries promptly, but sending four identical
+    // snapshots per visible second only creates transport churn. The cached
+    // snapshot is also the last state listeners actually received.
+    if (this.cachedSnapshot?.remainingSeconds !== remaining) this.emit()
   }
 
   /**
@@ -314,14 +333,16 @@ export class TimerEngine {
 
   private persisted(): PersistedTimer {
     return {
-      version: 1,
+      version: 2,
       phase: this.phase,
       totalSeconds: this.totalSeconds,
       reminders: this.reminders,
       firedReminderKeys: [...this.firedReminderKeys],
       inheritTheme: this.inheritTheme,
       deadlineAt: this.deadlineAt,
-      pausedElapsedSeconds: this.phase === 'paused' ? this.pausedElapsed : null,
+      pausedElapsedSeconds:
+        this.phase === 'paused' || this.phase === 'reminding' ? this.pausedElapsed : null,
+      activeReminderId: this.activeReminderId,
     }
   }
 

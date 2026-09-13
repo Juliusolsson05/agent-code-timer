@@ -2,7 +2,7 @@ import { defineConfig, type UserConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { extensionViteConfig } from 'agent-code-extension-api'
 
-// Build config for an Agent Code extension — the iframe model.
+// Build config for an Agent Code API v2 extension.
 //
 // WHY there are no React aliases here anymore (they were the heart of the old
 // build): an extension now runs in its OWN sandboxed iframe at its own origin, so
@@ -10,11 +10,13 @@ import { extensionViteConfig } from 'agent-code-extension-api'
 // so the "two reconcilers → invalid hook call" problem that forced the host-shim
 // dance simply does not exist across the frame boundary. Bundle React normally.
 //
-// extensionViteConfig() from the SDK supplies the parts that are easy to get wrong:
-// a single inlined ES module (the host loads exactly the one `entry` file over the
-// scheme), process.env.NODE_ENV defined (Vite lib mode does not, and the frame has
-// no `process`, so a React dev-guard would throw at activate()), and no CSS split.
-const preset = extensionViteConfig({ entry: 'src/index.ts' }) as UserConfig
+// extensionViteConfig() keeps the background runtime and disposable React view
+// as separate browser modules. Sharing one entry would recreate the API v1 bug:
+// closing the panel would destroy the timer that is meant to outlive it.
+const preset = extensionViteConfig({ entries: {
+  runtime: 'src/runtime.ts',
+  view: 'src/view.ts',
+} }) as UserConfig
 
 export default defineConfig({
   plugins: [react()],
