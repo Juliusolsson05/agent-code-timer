@@ -8,9 +8,8 @@
  * and when it is on these same variables are simply reassigned, so every rule
  * below keeps working without a second stylesheet.
  *
- * All values are scoped under .agent-code-timer rather than :root because this
- * stylesheet is injected into the HOST document. Anything at :root would leak
- * into Agent Code's own UI.
+ * All values are scoped under .agent-code-timer rather than :root so the view's
+ * own utility elements cannot accidentally inherit timer-specific overrides.
  */
 
 .agent-code-timer {

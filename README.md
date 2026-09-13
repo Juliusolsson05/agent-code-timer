@@ -2,7 +2,7 @@
 
 A focus timer extension for [Agent Code](https://github.com/Juliusolsson05/agent-code).
 Interval reminders, black-and-white by default, **and it keeps running when you
-close the window** — which is the entire point.
+close the panel** — which is the entire point.
 
 ## Install
 
@@ -28,13 +28,13 @@ Then `Open Timer` from the command palette.
 
 This is the design decision the whole extension is built around.
 
-A focus timer whose lifetime is tied to a visible window is not a focus timer —
-you start a 45-minute session and then *close the window to go and work*. So:
+A focus timer whose lifetime is tied to a visible panel is not a focus timer —
+you start a 45-minute session and then *close the panel to go and work*. So:
 
-- `activate()` runs on `onStartupFinished` and constructs a **headless
-  `TimerEngine`** that owns all state and all timing.
-- The **view is a subscriber**. Mounting attaches it, closing detaches it, and
-  the engine never notices either.
+- The API v2 runtime activates on `onStartupFinished` and constructs one
+  **headless `TimerEngine`** that owns all state and timing.
+- The independently built **view is a subscriber**. Mounting attaches it through
+  published JSON state, closing detaches it, and the engine never notices either.
 - State persists as a **wall-clock deadline**, not a countdown — so a session
   survives an app restart, and if the deadline passed while Agent Code was shut,
   it correctly reports finished rather than resuming a stale number.
@@ -47,13 +47,14 @@ self-corrects instead of accumulating drift.
 
 ```
 src/
-  index.ts              activate() / deactivate()
+  runtime.ts            background activation, commands, persistence, notifications
+  view.ts               API v2 view entry
   engine/               headless — outlives every view
     TimerEngine.ts      deadline-based, emits state
     types.ts
-    alert.ts            AudioContext tri-tone
+    alert.ts            view-owned AudioContext tri-tone
   view/                 disposable — a window onto the engine
-    mount.tsx           ViewMount: (element) => cleanup
+    mount.tsx           ViewMount: (element, context) => cleanup
     TimerView.tsx
     components/
   theme/
@@ -62,8 +63,8 @@ src/
     injectStyles.ts
 ```
 
-Built with the `agent-code-extension-api` SDK: types, `defineExtension`, and the
-Vite build preset. There is no `host/` shim directory anymore — see below.
+Built with the `agent-code-extension-api` SDK: `defineRuntime`, `defineView`, and
+the multi-entry Vite preset. There is no `host/` shim directory anymore.
 
 ### `dist/` is committed on purpose
 
@@ -82,11 +83,11 @@ frame boundary, so the "two reconcilers → invalid hook call" problem does not
 exist. `vite.config.ts` just uses `extensionViteConfig()` from the SDK plus
 `@vitejs/plugin-react`.
 
-The host talks to the frame over `postMessage`, brokered on the host side; the
-`api` object passed to `activate()` proxies the Tier-0 surface (storage / ui /
-theme) across that boundary. Theme tokens are pushed into the frame as CSS
-variables on every change, which is why `theme/inherit.ts` can still read
-`--theme-*` off `document.documentElement`.
+The host talks to each view frame over `postMessage`; the background runtime uses
+a separate isolated transport. Timer state crosses that boundary as bounded JSON,
+and view actions return as named runtime requests. Completion and reminder status
+uses the permissioned `notifications.show` API even when no panel is mounted.
+Theme tokens are pushed into a view as CSS variables on every change.
 
 ## Development
 
