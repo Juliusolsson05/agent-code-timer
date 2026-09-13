@@ -48,7 +48,17 @@
   box-sizing: border-box;
 }
 
-.agent-code-timer button {
+/*
+ * WHY the element resets are wrapped in :where(): a plain `.agent-code-timer button`
+ * selector has specificity 0,1,1, which BEATS every single-class component rule
+ * below (.tm-preset, .tm-primary, .tm-circle, .tm-ghost are 0,1,0). The reset then
+ * silently won for border, background, padding and colour, so the duration chips
+ * rendered as bare text, Start focus lost its pill, and the selected chip's
+ * 0,2,0 rule restored only its background — a tiny accent circle hugging the
+ * label. :where() contributes zero specificity, so any component class overrides
+ * these defaults no matter where it appears in the file.
+ */
+:where(.agent-code-timer button) {
   font-family: inherit;
   cursor: pointer;
   border: none;
@@ -59,7 +69,7 @@
   outline: none;
 }
 
-.agent-code-timer input {
+:where(.agent-code-timer input) {
   font-family: inherit;
   outline: none;
 }
